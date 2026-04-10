@@ -1,0 +1,5 @@
+{
+  "name": "AURA | AI Video Call",
+  "description": "A futuristic video calling experience with real-time AI transformations and immersive atmospheric design.",
+  "requestFramePermissions": ["camera", "microphone"]
+}
