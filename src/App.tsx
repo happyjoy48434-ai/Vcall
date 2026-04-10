@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode, useRef } from 'react';
 import { 
   Mic, 
   MicOff, 
@@ -17,9 +17,14 @@ import {
   Cpu,
   Waves,
   Ghost,
-  Bot
+  Bot,
+  MessageSquare,
+  X,
+  Send,
+  Volume2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { askAura, generateAuraVoice } from './services/aiService';
 
 // --- Types ---
 type Filter = {
@@ -72,6 +77,53 @@ export default function App() {
   const [showTransform, setShowTransform] = useState(true);
   const [activeFilter, setActiveFilter] = useState('cyber');
   const [isCallActive, setIsCallActive] = useState(true);
+  
+  // Assistant State
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState('');
+  const [isAssistantThinking, setIsAssistantThinking] = useState(false);
+  const [chatHistory, setChatHistory] = useState<{role: 'user' | 'aura', text: string}[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const handleAskAura = async (text: string) => {
+    if (!text.trim()) return;
+    
+    const newUserMsg = { role: 'user' as const, text };
+    setChatHistory(prev => [...prev, newUserMsg]);
+    setAssistantMessage('');
+    setIsAssistantThinking(true);
+
+    const response = await askAura(text);
+    setIsAssistantThinking(false);
+    
+    if (response) {
+      const auraMsg = { role: 'aura' as const, text: response };
+      setChatHistory(prev => [...prev, auraMsg]);
+      
+      // Generate and play voice
+      const audioData = await generateAuraVoice(response);
+      if (audioData) {
+        const audioBlob = new Blob([Uint8Array.from(atob(audioData), c => c.charCodeAt(0))], { type: 'audio/mp3' });
+        const url = URL.createObjectURL(audioBlob);
+        if (audioRef.current) {
+          audioRef.current.src = url;
+          audioRef.current.play();
+        }
+      }
+    }
+  };
+
+  const toggleListening = () => {
+    setIsListening(!isListening);
+    if (!isListening) {
+      // Simulate voice recognition for demo purposes if real API isn't used
+      setTimeout(() => {
+        setIsListening(false);
+        handleAskAura("Summarize the call highlights.");
+      }, 3000);
+    }
+  };
 
   if (!isCallActive) {
     return (
@@ -145,6 +197,105 @@ export default function App() {
           <span className="text-[10px] font-bold text-white uppercase tracking-tighter">Live</span>
         </div>
       </motion.div>
+
+      {/* --- AURA Assistant Orb --- */}
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => setShowAssistant(!showAssistant)}
+        className="fixed bottom-32 right-6 z-50 w-14 h-14 rounded-full bg-primary/20 backdrop-blur-xl border border-primary/40 flex items-center justify-center shadow-[0_0_30px_rgba(143,245,255,0.3)] group overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-gradient-to-tr from-primary/20 to-tertiary/20 animate-pulse" />
+        <Bot className={`w-7 h-7 text-primary transition-all duration-500 ${showAssistant ? 'rotate-180 scale-0' : 'scale-100'}`} />
+        <X className={`absolute w-7 h-7 text-primary transition-all duration-500 ${showAssistant ? 'scale-100 rotate-0' : 'scale-0 -rotate-180'}`} />
+      </motion.button>
+
+      {/* --- Assistant Panel --- */}
+      <AnimatePresence>
+        {showAssistant && (
+          <motion.div
+            initial={{ opacity: 0, x: 100, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 100, scale: 0.9 }}
+            className="fixed bottom-48 right-6 z-50 w-80 h-[450px] glass rounded-2xl border border-white/10 flex flex-col shadow-2xl overflow-hidden"
+          >
+            <div className="p-4 border-b border-white/5 flex items-center justify-between bg-surface-container/60">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span className="font-headline text-sm font-bold tracking-wider text-primary">AURA INTELLIGENCE</span>
+              </div>
+              <button onClick={() => setChatHistory([])} className="text-on-surface-variant hover:text-primary transition-colors">
+                <MessageSquare className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+              {chatHistory.length === 0 && (
+                <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-60">
+                  <Bot className="w-12 h-12 text-primary/40" />
+                  <p className="text-xs font-label px-6">
+                    I am AURA. How can I assist your communication today?
+                  </p>
+                </div>
+              )}
+              {chatHistory.map((msg, i) => (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  key={i}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div className={`max-w-[85%] p-3 rounded-xl text-xs font-label ${
+                    msg.role === 'user' 
+                      ? 'bg-primary/10 text-primary border border-primary/20' 
+                      : 'bg-surface-container-highest/60 text-on-surface border border-white/5'
+                  }`}>
+                    {msg.text}
+                  </div>
+                </motion.div>
+              ))}
+              {isAssistantThinking && (
+                <div className="flex justify-start">
+                  <div className="bg-surface-container-highest/60 p-3 rounded-xl border border-white/5 flex gap-1">
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 bg-surface-container/40 border-t border-white/5">
+              <div className="relative flex items-center gap-2">
+                <button 
+                  onClick={toggleListening}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+                    isListening ? 'bg-error text-white animate-pulse' : 'bg-surface-container-high text-on-surface-variant hover:text-primary'
+                  }`}
+                >
+                  {isListening ? <Waves className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+                <input 
+                  type="text" 
+                  value={assistantMessage}
+                  onChange={(e) => setAssistantMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleAskAura(assistantMessage)}
+                  placeholder={isListening ? "Listening..." : "Ask AURA..."}
+                  className="flex-1 bg-surface-container-high border-none rounded-full px-4 py-2 text-xs font-label focus:ring-1 focus:ring-primary/40 outline-none"
+                />
+                <button 
+                  onClick={() => handleAskAura(assistantMessage)}
+                  className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center hover:bg-primary/20 transition-all"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <audio ref={audioRef} hidden />
 
       {/* --- AI Transform Modal --- */}
       <AnimatePresence>
